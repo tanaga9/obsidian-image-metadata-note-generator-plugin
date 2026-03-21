@@ -14,79 +14,32 @@ export class ImageBatchNoteGeneratorSettingTab extends PluginSettingTab {
         containerEl.createEl("h2", { text: "Image Metadata Note Generator" });
 
         new Setting(containerEl)
-            .setName("Default input folder")
-            .setDesc("Vault-relative folder containing source images.")
-            .addText((text) => text
-                .setPlaceholder("Assets/Images")
-                .setValue(this.plugin.settings.inputFolder)
-                .onChange(async (value) => {
-                    this.plugin.settings.inputFolder = value.trim();
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName("Default output folder")
-            .setDesc("Vault-relative folder where generated notes will be written.")
-            .addText((text) => text
-                .setPlaceholder("Notes/Image Metadata")
-                .setValue(this.plugin.settings.outputFolder)
-                .onChange(async (value) => {
-                    this.plugin.settings.outputFolder = value.trim();
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName("Default tags folder")
-            .setDesc("Vault-relative folder used to discover known tag notes.")
-            .addText((text) => text
-                .setPlaceholder("Tags")
-                .setValue(this.plugin.settings.tagsFolder)
-                .onChange(async (value) => {
-                    this.plugin.settings.tagsFolder = value.trim();
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName("Default job note folder")
-            .setDesc("Suggested folder for storing batch job notes.")
-            .addText((text) => text
-                .setPlaceholder("Batch Jobs")
-                .setValue(this.plugin.settings.jobNoteFolder)
-                .onChange(async (value) => {
-                    this.plugin.settings.jobNoteFolder = value.trim();
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName("Overwrite existing by default")
+            .setName("Auto-open inspector")
+            .setDesc("Open the right-side inspector automatically when you switch to a job note.")
             .addToggle((toggle) => toggle
-                .setValue(this.plugin.settings.overwriteExisting)
+                .setValue(this.plugin.settings.autoOpenInspector)
                 .onChange(async (value) => {
-                    this.plugin.settings.overwriteExisting = value;
+                    this.plugin.settings.autoOpenInspector = value;
                     await this.plugin.saveSettings();
                 }));
 
         new Setting(containerEl)
-            .setName("Delete extra notes by default")
-            .addToggle((toggle) => toggle
-                .setValue(this.plugin.settings.deleteExtraNotes)
+            .setName("Max folder suggestions")
+            .setDesc("Maximum number of folder path suggestions shown in inspector fields.")
+            .addText((text) => text
+                .setPlaceholder("50")
+                .setValue(String(this.plugin.settings.maxSuggestionCount))
                 .onChange(async (value) => {
-                    this.plugin.settings.deleteExtraNotes = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName("Dry run by default")
-            .addToggle((toggle) => toggle
-                .setValue(this.plugin.settings.dryRun)
-                .onChange(async (value) => {
-                    this.plugin.settings.dryRun = value;
+                    const parsed = Number.parseInt(value.trim(), 10);
+                    this.plugin.settings.maxSuggestionCount = Number.isFinite(parsed) && parsed > 0
+                        ? parsed
+                        : DEFAULT_SETTINGS.maxSuggestionCount;
                     await this.plugin.saveSettings();
                 }));
 
         new Setting(containerEl)
             .setName("Reset defaults")
-            .setDesc("Restore plugin defaults for future jobs.")
+            .setDesc("Restore plugin-wide UI defaults.")
             .addButton((button) => button
                 .setButtonText("Reset")
                 .onClick(async () => {

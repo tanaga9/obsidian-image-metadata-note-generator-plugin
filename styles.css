@@ -1,36 +1,72 @@
-.imgbatch-view {
+.image-metadata-note-generator-view {
     padding: 1rem;
 }
 
-.imgbatch-view h2 {
+.image-metadata-note-generator-view h2 {
     margin-top: 0;
 }
 
-.imgbatch-active-note {
+.image-metadata-note-generator-active-note {
     margin-bottom: 1rem;
     padding: 0.75rem;
     background: var(--background-secondary);
     border-radius: 0.5rem;
 }
 
-.imgbatch-active-note-label {
+.image-metadata-note-generator-note-actions {
+    margin: -0.25rem 0 1rem;
+}
+
+.image-metadata-note-generator-note-action-text {
+    margin-bottom: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.image-metadata-note-generator-active-note-label {
     font-size: 0.85rem;
     color: var(--text-muted);
     margin-bottom: 0.25rem;
 }
 
-.imgbatch-active-note-value {
+.image-metadata-note-generator-active-note-value {
     word-break: break-all;
 }
 
-.imgbatch-actions {
+.image-metadata-note-generator-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
     margin: 1rem 0;
 }
 
-.imgbatch-status {
+.image-metadata-note-generator-run-hint {
+    margin: -0.25rem 0 1rem;
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+.image-metadata-note-generator-run-hint.is-dry-run {
+    background: color-mix(in srgb, var(--color-green) 12%, var(--background-secondary));
+    color: var(--text-normal);
+}
+
+.image-metadata-note-generator-run-hint.is-write {
+    background: color-mix(in srgb, var(--color-orange) 16%, var(--background-secondary));
+    color: var(--text-normal);
+}
+
+.image-metadata-note-generator-inspector-body.image-metadata-note-generator-is-hidden {
+    display: none;
+}
+
+.image-metadata-note-generator-is-readonly .setting-item {
+    opacity: 0.75;
+}
+
+.image-metadata-note-generator-status {
     margin: 1rem 0 0.75rem;
     padding: 0.75rem;
     background: var(--background-secondary);
@@ -38,7 +74,7 @@
     white-space: pre-wrap;
 }
 
-.imgbatch-log {
+.image-metadata-note-generator-log {
     width: 100%;
     min-height: 16rem;
     resize: vertical;

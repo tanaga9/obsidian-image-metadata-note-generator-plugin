@@ -1,0 +1,156 @@
+name: Build and Package Plugin
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "*" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Read plugin metadata (id, version)
+        run: |
+          node -e "console.log('ID='+require('./manifest.json').id)" >> "$GITHUB_ENV"
+          node -e "console.log('VERSION='+require('./manifest.json').version)" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ID }}-${{ env.VERSION }}
+          path: |
+            manifest.json
+            main.js
+            styles.css
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    # Only run on tag pushes and after build completes
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Read plugin metadata (id, version)
+        run: |
+          node -e "console.log('ID='+require('./manifest.json').id)" >> "$GITHUB_ENV"
+          node -e "console.log('VERSION='+require('./manifest.json').version)" >> "$GITHUB_ENV"
+          node -e "console.log('VERSION_PKG='+require('./package.json').version)" >> "$GITHUB_ENV"
+          node -e "console.log('NAME='+require('./manifest.json').name)" >> "$GITHUB_ENV"
+          node -e "console.log('MIN_APP='+require('./manifest.json').minAppVersion)" >> "$GITHUB_ENV"
+          echo "VERSION_TAG=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Compare versions and fail if mismatched
+        shell: bash
+        run: |
+          echo "Tag:         $VERSION_TAG"
+          echo "manifest:    $VERSION"
+          echo "package.json:$VERSION_PKG"
+          if [ "$VERSION_TAG" != "$VERSION" ] || [ "$VERSION_TAG" != "$VERSION_PKG" ]; then
+            echo "❌ Version mismatch: tag=$VERSION_TAG, manifest.json=$VERSION, package.json=$VERSION_PKG" >&2
+            exit 1
+          fi
+          echo "✅ Version match: $VERSION_TAG"
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ID }}-${{ env.VERSION }}
+          path: release
+
+      - name: Package single zip for Release
+        run: |
+          if [ -f release/styles.css ]; then
+            zip -j "release/${ID}-${VERSION}.zip" release/manifest.json release/main.js release/styles.css
+          else
+            zip -j "release/${ID}-${VERSION}.zip" release/manifest.json release/main.js
+          fi
+
+      - name: Prepare file list for Release assets (zip + individual files)
+        shell: bash
+        run: |
+          {
+            echo "release/${ID}-${VERSION}.zip";
+            echo "release/manifest.json";
+            echo "release/main.js";
+            if [ -f release/styles.css ]; then echo "release/styles.css"; fi
+          } > release/FILES_TO_UPLOAD.txt
+          echo "FILES<<EOF" >> "$GITHUB_ENV"
+          cat release/FILES_TO_UPLOAD.txt >> "$GITHUB_ENV"
+          echo "EOF" >> "$GITHUB_ENV"
+
+      - name: Generate Release Notes (BRAT + manual)
+        shell: bash
+        run: |
+          ZIP_PATH="release/${ID}-${VERSION}.zip"
+          SHA256=$(sha256sum "$ZIP_PATH" | awk '{print $1}')
+          cat > release/RELEASE_NOTES.md << EOF
+          # ${NAME} ${VERSION}
+
+          ## Installation
+
+          ### Option 1 - BRAT (recommended)
+          - Install the "BRAT" community plugin.
+          - In BRAT, click "Add Beta plugin" and enter the URL of this repository.
+          - Enable this plugin in Obsidian.
+
+          ### Option 2 - Manual (ZIP)
+          - Requirements: Obsidian ${MIN_APP}+ on Desktop (Windows/macOS/Linux).
+          - Download: ${ID}-${VERSION}.zip from this release.
+          - Close Obsidian or disable the plugin before replacing files.
+          - Extract and place the files into your vault at:
+            - Windows: _(Path to Vault)_ \\\\.obsidian\\plugins\\${ID}
+            - macOS/Linux: _(Path to Vault)_ /.obsidian/plugins/${ID}
+          - The plugin folder must contain:
+            - manifest.json
+            - main.js
+            - styles.css
+          - Restart Obsidian (or re-enable the plugin) and verify under Settings -> Community plugins.
+
+          ## Compatibility
+          - Requires Obsidian ${MIN_APP}+.
+          - Supports BRAT auto-updates.
+
+          ## Assets
+          - This release includes a single ZIP and individual files (manifest.json, main.js, styles.css) for BRAT users.
+
+          ## Checksum
+          - SHA-256 for ${ID}-${VERSION}.zip:
+            ${SHA256}
+
+          EOF
+
+      - name: Create GitHub Release (zip + individual assets for BRAT)
+        uses: softprops/action-gh-release@v1
+        with:
+          name: ${{ env.ID }} ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: ${{ env.FILES }}
+          body_path: release/RELEASE_NOTES.md
