@@ -1,0 +1,46 @@
+.imgbatch-view {
+    padding: 1rem;
+}
+
+.imgbatch-view h2 {
+    margin-top: 0;
+}
+
+.imgbatch-active-note {
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    background: var(--background-secondary);
+    border-radius: 0.5rem;
+}
+
+.imgbatch-active-note-label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 0.25rem;
+}
+
+.imgbatch-active-note-value {
+    word-break: break-all;
+}
+
+.imgbatch-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 1rem 0;
+}
+
+.imgbatch-status {
+    margin: 1rem 0 0.75rem;
+    padding: 0.75rem;
+    background: var(--background-secondary);
+    border-radius: 0.5rem;
+    white-space: pre-wrap;
+}
+
+.imgbatch-log {
+    width: 100%;
+    min-height: 16rem;
+    resize: vertical;
+    font-family: var(--font-monospace);
+}

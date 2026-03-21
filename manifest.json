@@ -1,0 +1,10 @@
+{
+    "id": "image-metadata-note-generator",
+    "name": "Image Metadata Note Generator",
+    "version": "0.1.0",
+    "minAppVersion": "1.5.0",
+    "description": "Generate Markdown notes from image metadata using job-note style definitions stored in your vault.",
+    "author": "tanaga9",
+    "authorUrl": "https://github.com/tanaga9",
+    "isDesktopOnly": false
+}
