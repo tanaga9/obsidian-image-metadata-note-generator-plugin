@@ -41,6 +41,6 @@ export type RunReport = {
 };
 
 export const DEFAULT_SETTINGS: PluginSettings = {
-    autoOpenInspector: true,
+    autoOpenInspector: false,
     maxSuggestionCount: 50
 };

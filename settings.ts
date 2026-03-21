@@ -15,7 +15,7 @@ export class ImageBatchNoteGeneratorSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName("Auto-open inspector")
-            .setDesc("Open the right-side inspector automatically when you switch to a job note.")
+            .setDesc("Open the right-side inspector automatically when you switch to a job note. Disabled by default.")
             .addToggle((toggle) => toggle
                 .setValue(this.plugin.settings.autoOpenInspector)
                 .onChange(async (value) => {

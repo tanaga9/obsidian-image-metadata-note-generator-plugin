@@ -23,6 +23,29 @@
     font-size: 0.9rem;
 }
 
+.image-metadata-note-generator-inline-cta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0 0 1rem;
+    padding: 0.875rem 1rem;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 0.75rem;
+}
+
+.image-metadata-note-generator-inline-cta-text {
+    flex: 1 1 16rem;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    line-height: 1.4;
+}
+
+.markdown-source-view.is-live-preview .image-metadata-note-generator-inline-cta {
+    display: none;
+}
+
 .image-metadata-note-generator-active-note-label {
     font-size: 0.85rem;
     color: var(--text-muted);

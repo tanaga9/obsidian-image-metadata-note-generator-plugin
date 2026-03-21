@@ -609,6 +609,38 @@ export default class ImageBatchNoteGeneratorPlugin extends Plugin {
 
         this.addSettingTab(new ImageBatchNoteGeneratorSettingTab(this.app, this));
 
+        this.registerMarkdownPostProcessor((el, context) => {
+            const section = context.getSectionInfo(el);
+            if (section && section.lineStart > 0) {
+                return;
+            }
+
+            const file = this.app.vault.getAbstractFileByPath(context.sourcePath);
+            if (!(file instanceof TFile) || !this.isJobNote(file)) {
+                return;
+            }
+
+            if (el.querySelector(".image-metadata-note-generator-inline-cta")) {
+                return;
+            }
+
+            const wrapper = createDiv({ cls: "image-metadata-note-generator-inline-cta" });
+            wrapper.createDiv({
+                cls: "image-metadata-note-generator-inline-cta-text",
+                text: "This note is an image metadata job."
+            });
+
+            const button = wrapper.createEl("button", {
+                cls: "mod-cta",
+                text: "Open inspector"
+            });
+            button.addEventListener("click", () => {
+                void this.activateView();
+            });
+
+            el.prepend(wrapper);
+        });
+
         this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
             void this.maybeAutoOpenInspector();
         }));
@@ -640,12 +672,14 @@ export default class ImageBatchNoteGeneratorPlugin extends Plugin {
             : DEFAULT_SETTINGS.maxSuggestionCount;
     }
 
+    isJobNote(file: TFile): boolean {
+        return this.app.metadataCache.getFileCache(file)?.frontmatter?.type === JOB_NOTE_TYPE;
+    }
+
     private async maybeAutoOpenInspector() {
         if (!this.settings.autoOpenInspector) return;
         const file = this.app.workspace.getActiveFile();
-        if (!(file instanceof TFile) || file.extension !== "md") return;
-        const loaded = loadJobConfigFromNote(this.app, file);
-        if (!loaded) return;
+        if (!(file instanceof TFile) || file.extension !== "md" || !this.isJobNote(file)) return;
         await this.activateView();
     }
 
