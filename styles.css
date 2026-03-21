@@ -13,6 +13,16 @@
     border-radius: 0.5rem;
 }
 
+.imgbatch-note-actions {
+    margin: -0.25rem 0 1rem;
+}
+
+.imgbatch-note-action-text {
+    margin-bottom: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
 .imgbatch-active-note-label {
     font-size: 0.85rem;
     color: var(--text-muted);
@@ -28,6 +38,10 @@
     flex-wrap: wrap;
     gap: 0.5rem;
     margin: 1rem 0;
+}
+
+.imgbatch-is-readonly .setting-item {
+    opacity: 0.75;
 }
 
 .imgbatch-status {

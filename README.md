@@ -3,8 +3,9 @@
 An Obsidian plugin for batch-generating Markdown notes from image metadata.
 
 ## Features
-- Dedicated control panel for image metadata note generation
+- Current-note inspector workflow for image metadata jobs
 - Vault-relative `input folder`, `output folder`, and `tags folder`
+- Folder path suggestions in inspector fields
 - Stable Diffusion-style metadata extraction from `png`, `jpg`, `jpeg`, and `webp`
 - Job-note workflow using Markdown frontmatter in the current note
 - `Scan`, `Run`, `Dry run`, `Overwrite existing`, and `Delete extra notes`
@@ -14,7 +15,7 @@ Store batch settings in a Markdown note frontmatter:
 
 ```yaml
 ---
-imgbatch_job: true
+type: image-metadata-note-generator-job
 input_folder: Assets/Images
 output_folder: Notes/Image Metadata
 tags_folder: Tags
@@ -24,7 +25,8 @@ dry_run: false
 ---
 ```
 
-Open the note, then use the command or the control panel button to load it.
+Open the job note and the inspector will bind to it automatically.
+If the current note is not a job note yet, use the inspector action to initialize it.
 
 ## Install (from source)
 1. Install dependencies

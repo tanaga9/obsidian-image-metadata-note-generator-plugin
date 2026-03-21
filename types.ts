@@ -1,4 +1,4 @@
-export const JOB_NOTE_FLAG = "imgbatch_job";
+export const JOB_NOTE_TYPE = "image-metadata-note-generator-job";
 
 export type BatchJobConfig = {
     inputFolder: string;
@@ -9,8 +9,18 @@ export type BatchJobConfig = {
     dryRun: boolean;
 };
 
-export type PluginSettings = BatchJobConfig & {
-    jobNoteFolder: string;
+export const DEFAULT_JOB_CONFIG: BatchJobConfig = {
+    inputFolder: "",
+    outputFolder: "",
+    tagsFolder: "",
+    overwriteExisting: true,
+    deleteExtraNotes: false,
+    dryRun: false
+};
+
+export type PluginSettings = {
+    autoOpenInspector: boolean;
+    maxSuggestionCount: number;
 };
 
 export type ScanReport = {
@@ -31,11 +41,6 @@ export type RunReport = {
 };
 
 export const DEFAULT_SETTINGS: PluginSettings = {
-    inputFolder: "",
-    outputFolder: "",
-    tagsFolder: "",
-    overwriteExisting: true,
-    deleteExtraNotes: false,
-    dryRun: false,
-    jobNoteFolder: "Batch Jobs"
+    autoOpenInspector: true,
+    maxSuggestionCount: 50
 };

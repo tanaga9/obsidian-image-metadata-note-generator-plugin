@@ -1,6 +1,7 @@
 import { App, FileManager, TFile, normalizePath } from "obsidian";
 import { parseImageMeta } from "./parser";
 import { convertTag, extractModelNames, promptToTags, splitPromptAndParameters, splitTagByKnownNotes, transformColons } from "./prompt";
+import { JOB_NOTE_TYPE } from "./types";
 import type { BatchJobConfig, RunReport, ScanReport } from "./types";
 
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp"]);
@@ -130,7 +131,7 @@ export function normalizeFolderInput(path: string): string {
 
 export async function saveJobConfigToNote(fileManager: FileManager, file: TFile, config: BatchJobConfig): Promise<void> {
     await fileManager.processFrontMatter(file, (frontmatter) => {
-        frontmatter.imgbatch_job = true;
+        frontmatter.type = JOB_NOTE_TYPE;
         frontmatter.input_folder = config.inputFolder;
         frontmatter.output_folder = config.outputFolder;
         frontmatter.tags_folder = config.tagsFolder;
@@ -143,7 +144,7 @@ export async function saveJobConfigToNote(fileManager: FileManager, file: TFile,
 export function loadJobConfigFromNote(app: App, file: TFile): Partial<BatchJobConfig> | null {
     const cache = app.metadataCache.getFileCache(file);
     const frontmatter = cache?.frontmatter;
-    if (!frontmatter || !frontmatter.imgbatch_job) {
+    if (!frontmatter || frontmatter.type !== JOB_NOTE_TYPE) {
         return null;
     }
 
@@ -219,7 +220,7 @@ function buildMarkdownForImage(imageFile: TFile, parameters: string, knownTags: 
     const lines: string[] = [];
 
     lines.push("---");
-    lines.push("imgbatch_generated: true");
+    lines.push("generated: true");
     lines.push(`source_image: ${imageFile.path}`);
     lines.push("prompt: |-");
     lines.push(...indentBlock(prompt));

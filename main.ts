@@ -1,4 +1,5 @@
 import {
+    AbstractInputSuggest,
     App,
     debounce,
     ItemView,
@@ -6,6 +7,7 @@ import {
     Plugin,
     Setting,
     TFile,
+    TFolder,
     TextComponent,
     ToggleComponent,
     WorkspaceLeaf
@@ -18,15 +20,43 @@ import {
     scanBatchJob
 } from "./generator";
 import { ImageBatchNoteGeneratorSettingTab } from "./settings";
-import { DEFAULT_SETTINGS, JOB_NOTE_FLAG, type BatchJobConfig, type PluginSettings, type RunReport, type ScanReport } from "./types";
+import { DEFAULT_JOB_CONFIG, DEFAULT_SETTINGS, JOB_NOTE_TYPE, type BatchJobConfig, type PluginSettings, type RunReport, type ScanReport } from "./types";
 
 export const VIEW_TYPE_BATCH_NOTE_GENERATOR = "image-metadata-note-generator-view";
+
+class FolderPathSuggest extends AbstractInputSuggest<string> {
+    constructor(app: App, private text: TextComponent, private getMaxSuggestions: () => number) {
+        super(app, text.inputEl);
+    }
+
+    protected getSuggestions(query: string): string[] {
+        const normalizedQuery = normalizeFolderInput(query).toLowerCase();
+        return this.app.vault.getAllLoadedFiles()
+            .filter((file): file is TFolder => file instanceof TFolder)
+            .map((folder) => folder.path)
+            .filter((path) => path.length > 0)
+            .sort((left, right) => left.localeCompare(right))
+            .filter((path) => !normalizedQuery || path.toLowerCase().includes(normalizedQuery))
+            .slice(0, this.getMaxSuggestions());
+    }
+
+    renderSuggestion(value: string, el: HTMLElement) {
+        el.setText(value);
+    }
+
+    selectSuggestion(value: string): void {
+        this.text.setValue(value);
+        this.text.onChanged();
+        this.close();
+    }
+}
 
 class ImageMetadataNoteGeneratorView extends ItemView {
     private state: BatchJobConfig;
     private statusEl: HTMLDivElement | null = null;
     private logEl: HTMLTextAreaElement | null = null;
     private activeJobEl: HTMLDivElement | null = null;
+    private noteActionEl: HTMLDivElement | null = null;
     private inputFolderText: TextComponent | null = null;
     private outputFolderText: TextComponent | null = null;
     private tagsFolderText: TextComponent | null = null;
@@ -96,18 +126,19 @@ class ImageMetadataNoteGeneratorView extends ItemView {
         this.renderActiveJob(file);
     }
 
-    async saveToCurrentNote() {
+    async createJobFromCurrentNote() {
         const file = this.app.workspace.getActiveFile();
         if (!(file instanceof TFile) || file.extension !== "md") {
-            new Notice("Open a Markdown note to save the image metadata job.");
+            new Notice("Open a Markdown note to use it as an image metadata job.");
             return;
         }
 
         await saveJobConfigToNote(this.app.fileManager, file, this.state);
         this.linkedNote = file;
+        this.setControlsDisabled(false);
         this.renderActiveJob(file);
-        this.setStatus(`Saved image metadata job to ${file.path}`);
-        new Notice("Image metadata job saved to current note.");
+        this.setStatus(`Initialized job note at ${file.path}`);
+        new Notice("Current note is now an image metadata job.");
     }
 
     private render() {
@@ -117,18 +148,20 @@ class ImageMetadataNoteGeneratorView extends ItemView {
 
         contentEl.createEl("h2", { text: "Image Metadata Note Generator" });
         contentEl.createEl("p", {
-            text: "Use vault-relative folders and optionally load or save the job definition from the current Markdown note."
+            text: "The current job note is the source of truth. Edit frontmatter through this inspector, then scan or run it."
         });
 
         const currentFile = this.app.workspace.getActiveFile();
         this.activeJobEl = contentEl.createDiv({ cls: "imgbatch-active-note" });
         this.renderActiveJob(currentFile instanceof TFile ? currentFile : null);
+        this.noteActionEl = contentEl.createDiv({ cls: "imgbatch-note-actions" });
 
         new Setting(contentEl)
             .setName("Input folder")
             .setDesc("Source image folder inside the vault.")
             .addText((text) => {
                 this.inputFolderText = text;
+                new FolderPathSuggest(this.app, text, () => this.plugin.getMaxSuggestionCount());
                 text.setPlaceholder("Assets/Images");
                 text.setValue(this.state.inputFolder);
                 text.onChange((value) => {
@@ -142,6 +175,7 @@ class ImageMetadataNoteGeneratorView extends ItemView {
             .setDesc("Destination folder for generated Markdown notes.")
             .addText((text) => {
                 this.outputFolderText = text;
+                new FolderPathSuggest(this.app, text, () => this.plugin.getMaxSuggestionCount());
                 text.setPlaceholder("Notes/Image Metadata");
                 text.setValue(this.state.outputFolder);
                 text.onChange((value) => {
@@ -155,6 +189,7 @@ class ImageMetadataNoteGeneratorView extends ItemView {
             .setDesc("Folder containing existing tag notes for longest-match splitting.")
             .addText((text) => {
                 this.tagsFolderText = text;
+                new FolderPathSuggest(this.app, text, () => this.plugin.getMaxSuggestionCount());
                 text.setPlaceholder("Tags");
                 text.setValue(this.state.tagsFolder);
                 text.onChange((value) => {
@@ -199,23 +234,17 @@ class ImageMetadataNoteGeneratorView extends ItemView {
             });
 
         const actions = contentEl.createDiv({ cls: "imgbatch-actions" });
-        this.createButton(actions, "Reload current note", async () => {
-            await this.refreshFromCurrentNote();
+        this.createButton(actions, "Scan current job", async () => {
+            await this.handleScan();
         });
-        this.createButton(actions, "Save to current note", async () => {
-            await this.saveToCurrentNote();
+        this.createButton(actions, "Run current job", async () => {
+            await this.handleRun();
         });
-        this.createButton(actions, "Reset to defaults", async () => {
+        this.createButton(actions, "Reset fields to defaults", async () => {
             this.state = this.plugin.createDefaultJobConfig();
             this.syncControls();
             this.scheduleAutoSave();
-            this.setStatus("Restored defaults.");
-        });
-        this.createButton(actions, "Scan", async () => {
-            await this.handleScan();
-        });
-        this.createButton(actions, "Run", async () => {
-            await this.handleRun();
+            this.setStatus(this.linkedNote ? "Restored defaults for current job." : "Restored defaults.");
         });
 
         this.statusEl = contentEl.createDiv({ cls: "imgbatch-status" });
@@ -225,17 +254,25 @@ class ImageMetadataNoteGeneratorView extends ItemView {
         this.logEl = contentEl.createEl("textarea", { cls: "imgbatch-log" });
         this.logEl.readOnly = true;
         this.logEl.value = "";
+        this.setControlsDisabled(true);
     }
 
     private renderActiveJob(file: TFile | null) {
         if (!this.activeJobEl) return;
         this.activeJobEl.empty();
         const label = this.activeJobEl.createDiv({ cls: "imgbatch-active-note-label" });
-        label.setText("Linked note");
+        label.setText("Current note");
         const value = this.activeJobEl.createDiv({ cls: "imgbatch-active-note-value" });
         value.setText(file?.path ?? "None");
         const hint = this.activeJobEl.createDiv({ cls: "imgbatch-active-note-label" });
-        hint.setText(file ? "UI edits auto-save to this note." : "Open a job note or save once to link this UI.");
+        if (!file) {
+            hint.setText("Open a Markdown note to inspect or run a batch job.");
+        } else if (this.linkedNote?.path === file.path) {
+            hint.setText("This note is a job note. Field edits auto-save to its frontmatter.");
+        } else {
+            hint.setText("This note is not a job note yet.");
+        }
+        this.renderNoteActions(file);
     }
 
     private createButton(container: HTMLElement, text: string, handler: () => Promise<void>) {
@@ -257,6 +294,16 @@ class ImageMetadataNoteGeneratorView extends ItemView {
         this.suppressAutoSave = false;
     }
 
+    private setControlsDisabled(disabled: boolean) {
+        this.inputFolderText?.setDisabled(disabled);
+        this.outputFolderText?.setDisabled(disabled);
+        this.tagsFolderText?.setDisabled(disabled);
+        this.overwriteToggle?.setDisabled(disabled);
+        this.deleteExtraToggle?.setDisabled(disabled);
+        this.dryRunToggle?.setDisabled(disabled);
+        this.contentEl.toggleClass("imgbatch-is-readonly", disabled);
+    }
+
     private scheduleAutoSave() {
         if (this.suppressAutoSave) return;
         this.debouncedAutoSave();
@@ -266,6 +313,9 @@ class ImageMetadataNoteGeneratorView extends ItemView {
         const file = this.app.workspace.getActiveFile();
         if (!(file instanceof TFile) || file.extension !== "md") {
             this.linkedNote = null;
+            this.state = this.plugin.createDefaultJobConfig();
+            this.syncControls();
+            this.setControlsDisabled(true);
             this.renderActiveJob(null);
             return;
         }
@@ -273,7 +323,11 @@ class ImageMetadataNoteGeneratorView extends ItemView {
         const loaded = loadJobConfigFromNote(this.app, file);
         if (!loaded) {
             this.linkedNote = null;
-            this.renderActiveJob(null);
+            this.state = this.plugin.createDefaultJobConfig();
+            this.syncControls();
+            this.setControlsDisabled(true);
+            this.renderActiveJob(file);
+            this.setStatus(`Open a job note or initialize ${file.path} as one.`);
             return;
         }
 
@@ -283,6 +337,7 @@ class ImageMetadataNoteGeneratorView extends ItemView {
             ...loaded
         };
         this.syncControls();
+        this.setControlsDisabled(false);
         this.renderActiveJob(file);
         this.setStatus(`Auto-loaded job from ${file.path}`);
     }
@@ -300,6 +355,7 @@ class ImageMetadataNoteGeneratorView extends ItemView {
 
         this.state = nextState;
         this.syncControls();
+        this.setControlsDisabled(false);
         this.renderActiveJob(file);
         this.setStatus(`Synced job from ${file.path}`);
     }
@@ -314,10 +370,45 @@ class ImageMetadataNoteGeneratorView extends ItemView {
         }
 
         const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
-        if (!frontmatter?.[JOB_NOTE_FLAG]) return;
+        if (frontmatter?.type !== JOB_NOTE_TYPE) return;
 
         await saveJobConfigToNote(this.app.fileManager, file, this.state);
         this.setStatus(`Auto-saved job to ${file.path}`);
+    }
+
+    private renderNoteActions(file: TFile | null) {
+        if (!this.noteActionEl) return;
+        this.noteActionEl.empty();
+        if (!file) return;
+
+        if (file.extension !== "md") {
+            this.noteActionEl.createDiv({
+                cls: "imgbatch-note-action-text",
+                text: "Only Markdown notes can be used as batch job notes."
+            });
+            return;
+        }
+
+        if (this.linkedNote?.path === file.path) {
+            this.noteActionEl.createDiv({
+                cls: "imgbatch-note-action-text",
+                text: "Inspector is bound to the current job note."
+            });
+            return;
+        }
+
+        this.noteActionEl.createDiv({
+            cls: "imgbatch-note-action-text",
+            text: "Use this note as a batch job to edit its frontmatter with folder suggestions."
+        });
+        const button = this.noteActionEl.createEl("button", {
+            cls: "mod-cta",
+            text: "Use current note as job note"
+        });
+        button.addEventListener("click", async () => {
+            if (this.isBusy) return;
+            await this.createJobFromCurrentNote();
+        });
     }
 
     private isSameState(left: BatchJobConfig, right: BatchJobConfig): boolean {
@@ -330,13 +421,14 @@ class ImageMetadataNoteGeneratorView extends ItemView {
     }
 
     private validateState(): string | null {
+        if (!this.linkedNote) return "Open a job note first.";
         if (!this.state.inputFolder) return "Input folder is required.";
         if (!this.state.outputFolder) return "Output folder is required.";
         if (this.state.inputFolder === this.state.outputFolder) return "Input and output folders must be different.";
         return null;
     }
 
-    private async handleScan() {
+    async handleScan() {
         const error = this.validateState();
         if (error) {
             this.setStatus(error);
@@ -352,7 +444,7 @@ class ImageMetadataNoteGeneratorView extends ItemView {
         });
     }
 
-    private async handleRun() {
+    async handleRun() {
         const error = this.validateState();
         if (error) {
             this.setStatus(error);
@@ -463,38 +555,46 @@ export default class ImageBatchNoteGeneratorPlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "load-current-note-into-batch-generator",
-            name: "Load current note into image metadata note generator",
+            id: "initialize-current-note-as-batch-job",
+            name: "Use current note as image metadata job",
             callback: async () => {
                 const view = await this.activateView();
-                await view?.refreshFromCurrentNote();
+                await view?.createJobFromCurrentNote();
             }
         });
 
         this.addCommand({
-            id: "save-current-batch-job-to-note",
-            name: "Save current image metadata job to current note",
+            id: "scan-current-batch-job-note",
+            name: "Scan current image metadata job note",
             callback: async () => {
                 const view = await this.activateView();
-                await view?.saveToCurrentNote();
+                await view?.handleScan();
+            }
+        });
+
+        this.addCommand({
+            id: "run-current-batch-job-note",
+            name: "Run current image metadata job note",
+            callback: async () => {
+                const view = await this.activateView();
+                await view?.handleRun();
             }
         });
 
         this.addSettingTab(new ImageBatchNoteGeneratorSettingTab(this.app, this));
+
+        this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
+            void this.maybeAutoOpenInspector();
+        }));
+
+        await this.maybeAutoOpenInspector();
     }
 
     onunload() {
     }
 
     createDefaultJobConfig(): BatchJobConfig {
-        return {
-            inputFolder: this.settings.inputFolder,
-            outputFolder: this.settings.outputFolder,
-            tagsFolder: this.settings.tagsFolder,
-            overwriteExisting: this.settings.overwriteExisting,
-            deleteExtraNotes: this.settings.deleteExtraNotes,
-            dryRun: this.settings.dryRun
-        };
+        return { ...DEFAULT_JOB_CONFIG };
     }
 
     async loadSettings() {
@@ -506,6 +606,21 @@ export default class ImageBatchNoteGeneratorPlugin extends Plugin {
 
     async saveSettings() {
         await this.saveData(this.settings);
+    }
+
+    getMaxSuggestionCount(): number {
+        return Number.isFinite(this.settings.maxSuggestionCount) && this.settings.maxSuggestionCount > 0
+            ? this.settings.maxSuggestionCount
+            : DEFAULT_SETTINGS.maxSuggestionCount;
+    }
+
+    private async maybeAutoOpenInspector() {
+        if (!this.settings.autoOpenInspector) return;
+        const file = this.app.workspace.getActiveFile();
+        if (!(file instanceof TFile) || file.extension !== "md") return;
+        const loaded = loadJobConfigFromNote(this.app, file);
+        if (!loaded) return;
+        await this.activateView();
     }
 
     async activateView(): Promise<ImageMetadataNoteGeneratorView | null> {
