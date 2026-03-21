@@ -1,0 +1,9 @@
+{
+  "inputFolder": "",
+  "outputFolder": "",
+  "tagsFolder": "",
+  "overwriteExisting": true,
+  "deleteExtraNotes": false,
+  "dryRun": false,
+  "jobNoteFolder": "Batch Jobs"
+}

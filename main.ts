@@ -1,5 +1,6 @@
 import {
     App,
+    debounce,
     ItemView,
     Notice,
     Plugin,
@@ -17,7 +18,7 @@ import {
     scanBatchJob
 } from "./generator";
 import { ImageBatchNoteGeneratorSettingTab } from "./settings";
-import { DEFAULT_SETTINGS, type BatchJobConfig, type PluginSettings, type RunReport, type ScanReport } from "./types";
+import { DEFAULT_SETTINGS, JOB_NOTE_FLAG, type BatchJobConfig, type PluginSettings, type RunReport, type ScanReport } from "./types";
 
 export const VIEW_TYPE_BATCH_NOTE_GENERATOR = "image-metadata-note-generator-view";
 
@@ -33,10 +34,16 @@ class ImageMetadataNoteGeneratorView extends ItemView {
     private deleteExtraToggle: ToggleComponent | null = null;
     private dryRunToggle: ToggleComponent | null = null;
     private isBusy = false;
+    private linkedNote: TFile | null = null;
+    private suppressAutoSave = false;
+    private readonly debouncedAutoSave: () => void;
 
     constructor(leaf: WorkspaceLeaf, private plugin: ImageBatchNoteGeneratorPlugin) {
         super(leaf);
         this.state = plugin.createDefaultJobConfig();
+        this.debouncedAutoSave = debounce(() => {
+            void this.persistStateToLinkedNote();
+        }, 500, true);
     }
 
     getViewType() {
@@ -52,7 +59,18 @@ class ImageMetadataNoteGeneratorView extends ItemView {
     }
 
     async onOpen() {
+        this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
+            void this.handleActiveFileChange();
+        }));
+        this.registerEvent(this.app.metadataCache.on("changed", (file) => {
+            void this.handleMetadataChange(file);
+        }));
         this.render();
+        await this.handleActiveFileChange();
+    }
+
+    async onClose() {
+        this.debouncedAutoSave();
     }
 
     async refreshFromCurrentNote() {
@@ -73,6 +91,7 @@ class ImageMetadataNoteGeneratorView extends ItemView {
             ...loaded
         };
         this.syncControls();
+        this.linkedNote = file;
         this.setStatus(`Loaded job from ${file.path}`);
         this.renderActiveJob(file);
     }
@@ -85,6 +104,7 @@ class ImageMetadataNoteGeneratorView extends ItemView {
         }
 
         await saveJobConfigToNote(this.app.fileManager, file, this.state);
+        this.linkedNote = file;
         this.renderActiveJob(file);
         this.setStatus(`Saved image metadata job to ${file.path}`);
         new Notice("Image metadata job saved to current note.");
@@ -113,6 +133,7 @@ class ImageMetadataNoteGeneratorView extends ItemView {
                 text.setValue(this.state.inputFolder);
                 text.onChange((value) => {
                     this.state.inputFolder = normalizeFolderInput(value);
+                    this.scheduleAutoSave();
                 });
             });
 
@@ -125,6 +146,7 @@ class ImageMetadataNoteGeneratorView extends ItemView {
                 text.setValue(this.state.outputFolder);
                 text.onChange((value) => {
                     this.state.outputFolder = normalizeFolderInput(value);
+                    this.scheduleAutoSave();
                 });
             });
 
@@ -137,6 +159,7 @@ class ImageMetadataNoteGeneratorView extends ItemView {
                 text.setValue(this.state.tagsFolder);
                 text.onChange((value) => {
                     this.state.tagsFolder = normalizeFolderInput(value);
+                    this.scheduleAutoSave();
                 });
             });
 
@@ -147,6 +170,7 @@ class ImageMetadataNoteGeneratorView extends ItemView {
                 toggle.setValue(this.state.overwriteExisting);
                 toggle.onChange((value) => {
                     this.state.overwriteExisting = value;
+                    this.scheduleAutoSave();
                 });
             });
 
@@ -158,6 +182,7 @@ class ImageMetadataNoteGeneratorView extends ItemView {
                 toggle.setValue(this.state.deleteExtraNotes);
                 toggle.onChange((value) => {
                     this.state.deleteExtraNotes = value;
+                    this.scheduleAutoSave();
                 });
             });
 
@@ -169,11 +194,12 @@ class ImageMetadataNoteGeneratorView extends ItemView {
                 toggle.setValue(this.state.dryRun);
                 toggle.onChange((value) => {
                     this.state.dryRun = value;
+                    this.scheduleAutoSave();
                 });
             });
 
         const actions = contentEl.createDiv({ cls: "imgbatch-actions" });
-        this.createButton(actions, "Load current note", async () => {
+        this.createButton(actions, "Reload current note", async () => {
             await this.refreshFromCurrentNote();
         });
         this.createButton(actions, "Save to current note", async () => {
@@ -182,6 +208,7 @@ class ImageMetadataNoteGeneratorView extends ItemView {
         this.createButton(actions, "Reset to defaults", async () => {
             this.state = this.plugin.createDefaultJobConfig();
             this.syncControls();
+            this.scheduleAutoSave();
             this.setStatus("Restored defaults.");
         });
         this.createButton(actions, "Scan", async () => {
@@ -204,9 +231,11 @@ class ImageMetadataNoteGeneratorView extends ItemView {
         if (!this.activeJobEl) return;
         this.activeJobEl.empty();
         const label = this.activeJobEl.createDiv({ cls: "imgbatch-active-note-label" });
-        label.setText("Current note");
+        label.setText("Linked note");
         const value = this.activeJobEl.createDiv({ cls: "imgbatch-active-note-value" });
         value.setText(file?.path ?? "None");
+        const hint = this.activeJobEl.createDiv({ cls: "imgbatch-active-note-label" });
+        hint.setText(file ? "UI edits auto-save to this note." : "Open a job note or save once to link this UI.");
     }
 
     private createButton(container: HTMLElement, text: string, handler: () => Promise<void>) {
@@ -218,12 +247,86 @@ class ImageMetadataNoteGeneratorView extends ItemView {
     }
 
     private syncControls() {
+        this.suppressAutoSave = true;
         this.inputFolderText?.setValue(this.state.inputFolder);
         this.outputFolderText?.setValue(this.state.outputFolder);
         this.tagsFolderText?.setValue(this.state.tagsFolder);
         this.overwriteToggle?.setValue(this.state.overwriteExisting);
         this.deleteExtraToggle?.setValue(this.state.deleteExtraNotes);
         this.dryRunToggle?.setValue(this.state.dryRun);
+        this.suppressAutoSave = false;
+    }
+
+    private scheduleAutoSave() {
+        if (this.suppressAutoSave) return;
+        this.debouncedAutoSave();
+    }
+
+    private async handleActiveFileChange() {
+        const file = this.app.workspace.getActiveFile();
+        if (!(file instanceof TFile) || file.extension !== "md") {
+            this.linkedNote = null;
+            this.renderActiveJob(null);
+            return;
+        }
+
+        const loaded = loadJobConfigFromNote(this.app, file);
+        if (!loaded) {
+            this.linkedNote = null;
+            this.renderActiveJob(null);
+            return;
+        }
+
+        this.linkedNote = file;
+        this.state = {
+            ...this.plugin.createDefaultJobConfig(),
+            ...loaded
+        };
+        this.syncControls();
+        this.renderActiveJob(file);
+        this.setStatus(`Auto-loaded job from ${file.path}`);
+    }
+
+    private async handleMetadataChange(file: TFile) {
+        if (!this.linkedNote || file.path !== this.linkedNote.path) return;
+        const loaded = loadJobConfigFromNote(this.app, file);
+        if (!loaded) return;
+
+        const nextState: BatchJobConfig = {
+            ...this.plugin.createDefaultJobConfig(),
+            ...loaded
+        };
+        if (this.isSameState(nextState, this.state)) return;
+
+        this.state = nextState;
+        this.syncControls();
+        this.renderActiveJob(file);
+        this.setStatus(`Synced job from ${file.path}`);
+    }
+
+    private async persistStateToLinkedNote() {
+        const file = this.linkedNote;
+        if (!file) return;
+        if (!(this.app.vault.getAbstractFileByPath(file.path) instanceof TFile)) {
+            this.linkedNote = null;
+            this.renderActiveJob(null);
+            return;
+        }
+
+        const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+        if (!frontmatter?.[JOB_NOTE_FLAG]) return;
+
+        await saveJobConfigToNote(this.app.fileManager, file, this.state);
+        this.setStatus(`Auto-saved job to ${file.path}`);
+    }
+
+    private isSameState(left: BatchJobConfig, right: BatchJobConfig): boolean {
+        return left.inputFolder === right.inputFolder
+            && left.outputFolder === right.outputFolder
+            && left.tagsFolder === right.tagsFolder
+            && left.overwriteExisting === right.overwriteExisting
+            && left.deleteExtraNotes === right.deleteExtraNotes
+            && left.dryRun === right.dryRun;
     }
 
     private validateState(): string | null {
