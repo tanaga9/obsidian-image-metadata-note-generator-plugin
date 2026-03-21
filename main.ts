@@ -21,7 +21,7 @@ import { DEFAULT_SETTINGS, type BatchJobConfig, type PluginSettings, type RunRep
 
 export const VIEW_TYPE_BATCH_NOTE_GENERATOR = "image-metadata-note-generator-view";
 
-class BatchNoteGeneratorView extends ItemView {
+class ImageMetadataNoteGeneratorView extends ItemView {
     private state: BatchJobConfig;
     private statusEl: HTMLDivElement | null = null;
     private logEl: HTMLTextAreaElement | null = null;
@@ -44,7 +44,7 @@ class BatchNoteGeneratorView extends ItemView {
     }
 
     getDisplayText() {
-        return "Batch Note Generator";
+        return "Image Metadata Note Generator";
     }
 
     getIcon() {
@@ -80,14 +80,14 @@ class BatchNoteGeneratorView extends ItemView {
     async saveToCurrentNote() {
         const file = this.app.workspace.getActiveFile();
         if (!(file instanceof TFile) || file.extension !== "md") {
-            new Notice("Open a Markdown note to save the batch job.");
+            new Notice("Open a Markdown note to save the image metadata job.");
             return;
         }
 
         await saveJobConfigToNote(this.app.fileManager, file, this.state);
         this.renderActiveJob(file);
-        this.setStatus(`Saved batch job to ${file.path}`);
-        new Notice("Batch job saved to current note.");
+        this.setStatus(`Saved image metadata job to ${file.path}`);
+        new Notice("Image metadata job saved to current note.");
     }
 
     private render() {
@@ -95,7 +95,7 @@ class BatchNoteGeneratorView extends ItemView {
         contentEl.empty();
         contentEl.addClass("imgbatch-view");
 
-        contentEl.createEl("h2", { text: "Batch Note Generator" });
+        contentEl.createEl("h2", { text: "Image Metadata Note Generator" });
         contentEl.createEl("p", {
             text: "Use vault-relative folders and optionally load or save the job definition from the current Markdown note."
         });
@@ -265,7 +265,7 @@ class BatchNoteGeneratorView extends ItemView {
             if (report.failed.length > 0) {
                 new Notice(`Run completed with ${report.failed.length} failures.`);
             } else {
-                new Notice(this.state.dryRun ? "Dry run completed." : "Batch generation completed.");
+                new Notice(this.state.dryRun ? "Dry run completed." : "Image metadata note generation completed.");
             }
         });
     }
@@ -346,22 +346,22 @@ export default class ImageBatchNoteGeneratorPlugin extends Plugin {
 
         this.registerView(
             VIEW_TYPE_BATCH_NOTE_GENERATOR,
-            (leaf) => new BatchNoteGeneratorView(leaf, this)
+            (leaf) => new ImageMetadataNoteGeneratorView(leaf, this)
         );
 
-        this.addRibbonIcon("files", "Open batch note generator", async () => {
+        this.addRibbonIcon("files", "Open image metadata note generator", async () => {
             await this.activateView();
         });
 
         this.addCommand({
             id: "open-batch-note-generator-view",
-            name: "Open batch note generator",
+            name: "Open image metadata note generator",
             callback: async () => this.activateView()
         });
 
         this.addCommand({
             id: "load-current-note-into-batch-generator",
-            name: "Load current note into batch generator",
+            name: "Load current note into image metadata note generator",
             callback: async () => {
                 const view = await this.activateView();
                 await view?.refreshFromCurrentNote();
@@ -370,7 +370,7 @@ export default class ImageBatchNoteGeneratorPlugin extends Plugin {
 
         this.addCommand({
             id: "save-current-batch-job-to-note",
-            name: "Save current batch generator state to current note",
+            name: "Save current image metadata job to current note",
             callback: async () => {
                 const view = await this.activateView();
                 await view?.saveToCurrentNote();
@@ -405,14 +405,14 @@ export default class ImageBatchNoteGeneratorPlugin extends Plugin {
         await this.saveData(this.settings);
     }
 
-    async activateView(): Promise<BatchNoteGeneratorView | null> {
+    async activateView(): Promise<ImageMetadataNoteGeneratorView | null> {
         let leaf: WorkspaceLeaf | null = this.app.workspace.getLeavesOfType(VIEW_TYPE_BATCH_NOTE_GENERATOR)[0] ?? null;
         if (!leaf) {
             leaf = this.app.workspace.getRightLeaf(false);
         }
 
         if (!leaf) {
-            new Notice("Could not open batch note generator view.");
+            new Notice("Could not open image metadata note generator view.");
             return null;
         }
 
@@ -421,6 +421,6 @@ export default class ImageBatchNoteGeneratorPlugin extends Plugin {
             active: true
         });
         this.app.workspace.revealLeaf(leaf);
-        return leaf.view instanceof BatchNoteGeneratorView ? leaf.view : null;
+        return leaf.view instanceof ImageMetadataNoteGeneratorView ? leaf.view : null;
     }
 }

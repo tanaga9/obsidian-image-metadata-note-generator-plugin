@@ -1,9 +1,9 @@
 # Repository Guidelines
 
-This repository contains an Obsidian plugin scaffold for batch-generating Markdown notes from image metadata.
+This repository contains an Obsidian plugin for batch-generating Markdown notes from image metadata.
 
 ## Project Structure
-- `main.ts`: Plugin entry and initial batch-generator view scaffold.
+- `main.ts`: Plugin entry and image metadata note generator view.
 - `styles.css`: Minimal styles for the batch view.
 - `manifest.json`: Obsidian plugin manifest.
 - `rollup.config.mjs`: Build configuration.
@@ -23,4 +23,4 @@ This repository contains an Obsidian plugin scaffold for batch-generating Markdo
 ## Scope
 - No network calls.
 - Prefer mobile-safe Obsidian APIs.
-- Keep batch generation logic separate from image metadata viewer responsibilities.
+- Keep batch generation logic focused on note generation from image metadata.

@@ -3,7 +3,7 @@
 An Obsidian plugin for batch-generating Markdown notes from image metadata.
 
 ## Features
-- Dedicated control-panel view for batch note generation
+- Dedicated control panel for image metadata note generation
 - Vault-relative `input folder`, `output folder`, and `tags folder`
 - Stable Diffusion-style metadata extraction from `png`, `jpg`, `jpeg`, and `webp`
 - Job-note workflow using Markdown frontmatter in the current note
