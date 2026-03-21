@@ -103,3 +103,11 @@
     resize: vertical;
     font-family: var(--font-monospace);
 }
+
+.image-metadata-note-generator-template-preview {
+    width: 100%;
+    min-height: 24rem;
+    resize: vertical;
+    font-family: var(--font-monospace);
+    line-height: 1.45;
+}

@@ -1,15 +1,68 @@
 import { App, FileManager, TFile, normalizePath } from "obsidian";
+import Handlebars from "handlebars";
 import { parseImageMeta } from "./parser";
-import { convertTag, extractModelNames, promptToTags, splitPromptAndParameters, splitTagByKnownNotes, transformColons } from "./prompt";
+import { convertTag, extractModelNames, promptToTags, splitPromptAndParameters, splitTagByKnownNotes, transformColons, type ConvertedTag } from "./prompt";
 import { JOB_NOTE_TYPE } from "./types";
 import type { BatchJobConfig, RunReport, ScanReport } from "./types";
 
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp"]);
+export const DEFAULT_NOTE_TEMPLATE = `---
+generated: true
+source_image: {{image.path}}
+prompt: |-
+{{yamlIndentedPrompt}}
+---
+{{image.embed}}
+
+{{#if tagsInline}}
+{{tagsInline}}
+
+{{/if}}
+{{#each models}}
+- [[{{../tagBaseFolder}}/Model/{{fullName}}]] ([[{{name}}]])
+{{/each}}
+{{#if models.length}}
+
+{{/if}}
+{{#if tags.length}}
+| Tag | Page | danbooru | civitai | google |
+| ---- | ---- | -------- | ------- | ------ |
+{{#each tags}}
+| \`{{original}}\` | [[{{../tagBaseFolder}}/{{original}}]] ([[{{name}}]]) | [?](https://danbooru.donmai.us/wiki_pages/{{quotedTagUnderscore}}) [{{name}}](https://danbooru.donmai.us/posts?tags={{quotedTagUnderscore}}) | [civitai](https://civitai.com/search/models?query={{quotedTag}}) | [google](https://www.google.com/search?q={{quotedTag}}) |
+{{/each}}
+
+{{/if}}
+# parameters
+
+\`\`\`
+{{parameters}}
+\`\`\`
+`;
 
 type PreparedNote = {
     imageFile: TFile;
     outputPath: string;
     markdown: string;
+};
+
+type TemplateModel = {
+    fullName: string;
+    name: string;
+};
+
+type TemplateContext = {
+    image: {
+        path: string;
+        name: string;
+        embed: string;
+    };
+    tagBaseFolder: string;
+    prompt: string;
+    yamlIndentedPrompt: string;
+    parameters: string;
+    tags: ConvertedTag[];
+    tagsInline: string;
+    models: TemplateModel[];
 };
 
 export async function scanBatchJob(app: App, config: BatchJobConfig): Promise<ScanReport> {
@@ -59,7 +112,7 @@ export async function runBatchJob(
                 continue;
             }
 
-            const markdown = buildMarkdownForImage(imageFile, parameters, knownTags);
+            const markdown = await buildMarkdownForImage(app, config, imageFile, parameters, knownTags);
             preparedNotes.push({
                 imageFile,
                 outputPath: buildOutputPath(config.outputFolder, config.inputFolder, imageFile),
@@ -86,7 +139,7 @@ export async function runBatchJob(
             if (!(existing instanceof TFile)) report.created++;
             else report.updated++;
         }
-        if (config.deleteExtraNotes) {
+        if (!config.skipDeleteExtraNotes) {
             report.deleted = countExtraNotes(app, config.outputFolder, preparedNotes.map((item) => item.outputPath));
         }
         return report;
@@ -101,7 +154,7 @@ export async function runBatchJob(
                 onLog?.(`unchanged ${item.outputPath}`);
                 continue;
             }
-            if (!config.overwriteExisting) {
+            if (config.skipOverwriteExisting) {
                 report.skipped++;
                 onLog?.(`skip existing ${item.outputPath}`);
                 continue;
@@ -118,14 +171,15 @@ export async function runBatchJob(
         onLog?.(`created ${item.outputPath}`);
     }
 
-    if (config.deleteExtraNotes) {
+    if (!config.skipDeleteExtraNotes) {
         report.deleted = await deleteExtraNotes(app, config.outputFolder, preparedNotes.map((item) => item.outputPath), onLog);
     }
 
     return report;
 }
 
-export function normalizeFolderInput(path: string): string {
+export function normalizeFolderInput(path: string | null | undefined): string {
+    if (typeof path !== "string") return "";
     return path.replace(/^\/+|\/+$/g, "").trim();
 }
 
@@ -134,10 +188,18 @@ export async function saveJobConfigToNote(fileManager: FileManager, file: TFile,
         frontmatter.type = JOB_NOTE_TYPE;
         frontmatter.input_folder = config.inputFolder;
         frontmatter.output_folder = config.outputFolder;
-        frontmatter.tags_folder = config.tagsFolder;
-        frontmatter.overwrite_existing = config.overwriteExisting;
-        frontmatter.delete_extra_notes = config.deleteExtraNotes;
-        frontmatter.dry_run = config.dryRun;
+        if (config.tagsFolder) frontmatter.tags_folder = config.tagsFolder;
+        else delete frontmatter.tags_folder;
+        if (config.templateNote) frontmatter.template_note = config.templateNote;
+        else delete frontmatter.template_note;
+        if (config.skipOverwriteExisting) frontmatter.skip_overwrite_existing = true;
+        else delete frontmatter.skip_overwrite_existing;
+        if (config.skipDeleteExtraNotes) frontmatter.skip_delete_extra_notes = true;
+        else delete frontmatter.skip_delete_extra_notes;
+        if (config.dryRun) frontmatter.dry_run = true;
+        else delete frontmatter.dry_run;
+        delete frontmatter.overwrite_existing;
+        delete frontmatter.delete_extra_notes;
     });
 }
 
@@ -148,12 +210,18 @@ export function loadJobConfigFromNote(app: App, file: TFile): Partial<BatchJobCo
         return null;
     }
 
+    const legacyOverwriteExisting = booleanProp(frontmatter.overwrite_existing);
+    const legacyDeleteExtraNotes = booleanProp(frontmatter.delete_extra_notes);
+
     return {
         inputFolder: stringProp(frontmatter.input_folder),
         outputFolder: stringProp(frontmatter.output_folder),
         tagsFolder: stringProp(frontmatter.tags_folder),
-        overwriteExisting: booleanProp(frontmatter.overwrite_existing),
-        deleteExtraNotes: booleanProp(frontmatter.delete_extra_notes),
+        templateNote: stringProp(frontmatter.template_note),
+        skipOverwriteExisting: booleanProp(frontmatter.skip_overwrite_existing)
+            ?? (legacyOverwriteExisting != null ? !legacyOverwriteExisting : undefined),
+        skipDeleteExtraNotes: booleanProp(frontmatter.skip_delete_extra_notes)
+            ?? (legacyDeleteExtraNotes != null ? !legacyDeleteExtraNotes : undefined),
         dryRun: booleanProp(frontmatter.dry_run)
     };
 }
@@ -203,7 +271,24 @@ function buildOutputPath(outputFolder: string, inputFolder: string, imageFile: T
     return normalizePath(`${normalizedOutput}/${relWithoutExt}.md`);
 }
 
-function buildMarkdownForImage(imageFile: TFile, parameters: string, knownTags: Set<string>): string {
+async function buildMarkdownForImage(
+    app: App,
+    config: BatchJobConfig,
+    imageFile: TFile,
+    parameters: string,
+    knownTags: Set<string>
+): Promise<string> {
+    const template = await loadTemplateSource(app, config.templateNote);
+    const renderer = Handlebars.compile(template, { noEscape: true });
+    return renderer(createTemplateContext(config, imageFile, parameters, knownTags));
+}
+
+function createTemplateContext(
+    config: BatchJobConfig,
+    imageFile: TFile,
+    parameters: string,
+    knownTags: Set<string>
+): TemplateContext {
     const { prompt } = splitPromptAndParameters(parameters);
     const rawTags = promptToTags(prompt);
     const tagEntries = rawTags.flatMap((tag) => {
@@ -216,54 +301,39 @@ function buildMarkdownForImage(imageFile: TFile, parameters: string, knownTags: 
     });
 
     const uniqueTags = dedupeTags(tagEntries);
-    const models = extractModelNames(parameters);
-    const lines: string[] = [];
+    const models = extractModelNames(parameters).map((model) => ({
+        fullName: model,
+        name: model.split("/").pop() ?? model
+    }));
 
-    lines.push("---");
-    lines.push("generated: true");
-    lines.push(`source_image: ${imageFile.path}`);
-    lines.push("prompt: |-");
-    lines.push(...indentBlock(prompt));
-    lines.push("---");
-    lines.push(`![[${imageFile.path}]]`);
-    lines.push("");
+    return {
+        image: {
+            path: imageFile.path,
+            name: imageFile.basename,
+            embed: `![[${imageFile.path}]]`
+        },
+        tagBaseFolder: normalizeFolderInput(config.tagsFolder) || "Tags",
+        prompt,
+        yamlIndentedPrompt: indentBlock(prompt).join("\n"),
+        parameters,
+        tags: uniqueTags,
+        tagsInline: uniqueTags.map((tag) => `#${tag.quotedTagUnderscore}`).join(" "),
+        models
+    };
+}
 
-    if (uniqueTags.length > 0) {
-        lines.push(uniqueTags.map((tag) => `#${tag.quotedTagUnderscore}`).join(" "));
-        lines.push("");
+async function loadTemplateSource(app: App, templateNotePath: string): Promise<string> {
+    const normalizedTemplatePath = normalizeFolderInput(templateNotePath);
+    if (!normalizedTemplatePath) {
+        return DEFAULT_NOTE_TEMPLATE;
     }
 
-    for (const model of models) {
-        lines.push(`- [[Tags/Model/${model}]] ([[${model.split("/").pop() ?? model}]])`);
+    const abstractFile = app.vault.getAbstractFileByPath(normalizedTemplatePath);
+    if (!(abstractFile instanceof TFile) || abstractFile.extension !== "md") {
+        throw new Error(`Template note not found: ${normalizedTemplatePath}`);
     }
 
-    if (models.length > 0) {
-        lines.push("");
-    }
-
-    if (uniqueTags.length > 0) {
-        lines.push("| Tag | Page | danbooru | civitai | google |");
-        lines.push("| ---- | ---- | -------- | ------- | ------ |");
-        for (const tag of uniqueTags) {
-            lines.push(
-                `| \`${tag.original}\` | [[Tags/${tag.original}]] ([[${tag.name}]]) | ` +
-                `[?](https://danbooru.donmai.us/wiki_pages/${tag.quotedTagUnderscore}) ` +
-                `[${tag.name}](https://danbooru.donmai.us/posts?tags=${tag.quotedTagUnderscore}) | ` +
-                `[civitai](https://civitai.com/search/models?query=${tag.quotedTag}) | ` +
-                `[google](https://www.google.com/search?q=${tag.quotedTag}) |`
-            );
-        }
-        lines.push("");
-    }
-
-    lines.push("# parameters");
-    lines.push("");
-    lines.push("```");
-    lines.push(parameters);
-    lines.push("```");
-    lines.push("");
-
-    return lines.join("\n");
+    return await app.vault.read(abstractFile);
 }
 
 function dedupeTags(tags: ReturnType<typeof convertTag>[]): ReturnType<typeof convertTag>[] {
@@ -317,6 +387,7 @@ function countExtraNotes(app: App, outputFolder: string, keepPaths: string[]): n
     const keep = new Set(keepPaths.map((path) => normalizePath(path)));
     return app.vault.getMarkdownFiles()
         .filter((file) => isWithinFolder(file.path, normalizeFolderInput(outputFolder)))
+        .filter((file) => isGeneratedOutputNote(app, file))
         .filter((file) => !keep.has(normalizePath(file.path)))
         .length;
 }
@@ -327,9 +398,17 @@ async function deleteExtraNotes(app: App, outputFolder: string, keepPaths: strin
     for (const file of app.vault.getMarkdownFiles()) {
         if (!isWithinFolder(file.path, normalizeFolderInput(outputFolder))) continue;
         if (keep.has(normalizePath(file.path))) continue;
+        if (!isGeneratedOutputNote(app, file)) {
+            onLog?.(`skip delete ${file.path} (missing generated: true)`);
+            continue;
+        }
         await app.vault.delete(file);
         deleted++;
         onLog?.(`deleted ${file.path}`);
     }
     return deleted;
+}
+
+function isGeneratedOutputNote(app: App, file: TFile): boolean {
+    return app.metadataCache.getFileCache(file)?.frontmatter?.generated === true;
 }

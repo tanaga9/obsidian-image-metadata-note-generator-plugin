@@ -4,8 +4,9 @@ export type BatchJobConfig = {
     inputFolder: string;
     outputFolder: string;
     tagsFolder: string;
-    overwriteExisting: boolean;
-    deleteExtraNotes: boolean;
+    templateNote: string;
+    skipOverwriteExisting: boolean;
+    skipDeleteExtraNotes: boolean;
     dryRun: boolean;
 };
 
@@ -13,8 +14,9 @@ export const DEFAULT_JOB_CONFIG: BatchJobConfig = {
     inputFolder: "",
     outputFolder: "",
     tagsFolder: "",
-    overwriteExisting: true,
-    deleteExtraNotes: false,
+    templateNote: "",
+    skipOverwriteExisting: false,
+    skipDeleteExtraNotes: false,
     dryRun: false
 };
 
