@@ -1,6 +1,15 @@
 # Image Metadata Note Generator (Obsidian Plugin)
 
-An Obsidian plugin for batch-generating Markdown notes from image metadata.
+An Obsidian plugin that turns AI image metadata into Markdown notes, so prompts, settings, and tags become reusable knowledge in your vault.
+
+## Purpose
+The purpose of this project is to convert metadata embedded in AI-generated images into Markdown notes that Obsidian can work with, so image generation history becomes reusable knowledge inside the vault.
+
+Obsidian does not directly make good use of embedded metadata in formats such as `webp`. By extracting that information into notes, prompts, generation settings, tags, and related details can be stored in a searchable, linkable, and reusable form.
+
+Those notes are intended primarily as generated, machine-readable records rather than documents for manual editing. Their main purpose is to support search, reading, and follow-up note creation by making it easier to navigate links to notes that do not exist yet.
+
+They can also be read by AI agents and other Markdown-based tools, making past generations reusable as input for future prompt construction, evaluation, and iterative refinement.
 
 ## Features
 - Current-note inspector workflow for image metadata jobs
