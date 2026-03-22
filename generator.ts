@@ -317,7 +317,7 @@ function createTemplateContext(
         yamlIndentedPrompt: indentBlock(prompt).join("\n"),
         parameters,
         tags: uniqueTags,
-        tagsInline: uniqueTags.map((tag) => `#${tag.quotedTagUnderscore}`).join(" "),
+        tagsInline: formatInlineTags(uniqueTags),
         models
     };
 }
@@ -345,6 +345,22 @@ function dedupeTags(tags: ReturnType<typeof convertTag>[]): ReturnType<typeof co
         out.push(tag);
     }
     return out;
+}
+
+function formatInlineTags(tags: ReturnType<typeof convertTag>[]): string {
+    const seen = new Set<string>();
+    const inlineTags: string[] = [];
+
+    for (const tag of tags) {
+        if (!tag.obsidianTag || seen.has(tag.obsidianTag)) {
+            continue;
+        }
+
+        seen.add(tag.obsidianTag);
+        inlineTags.push(`#${tag.obsidianTag}`);
+    }
+
+    return inlineTags.join(" ");
 }
 
 function indentBlock(text: string): string[] {

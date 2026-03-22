@@ -3,6 +3,7 @@ export type ConvertedTag = {
     name: string;
     quotedTag: string;
     quotedTagUnderscore: string;
+    obsidianTag: string;
 };
 
 const ATTENTION_RE = /\\\(|\\\)|\\\[|\\]|\\\\|\\|\(|\[|:\s*([+-]?(?:\.\d+|\d+(?:\.\d+)?))\s*\)|\)|]|[^\\()\[\]:]+|:/g;
@@ -198,6 +199,29 @@ export function convertTag(tag: string): ConvertedTag {
         original,
         name,
         quotedTag: encodeURIComponent(name),
-        quotedTagUnderscore: encodeURIComponent(name.replace(/ /g, "_"))
+        quotedTagUnderscore: encodeURIComponent(name.replace(/ /g, "_")),
+        obsidianTag: toObsidianTag(original)
     };
+}
+
+export function toObsidianTag(tag: string): string {
+    const normalized = tag
+        .normalize("NFKC")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, "_")
+        .replace(/[\\/]+/g, "_")
+        .replace(/[^\p{L}\p{N}_-]+/gu, "_")
+        .replace(/_+/g, "_")
+        .replace(/^[_-]+|[_-]+$/g, "");
+
+    if (!normalized) {
+        return "";
+    }
+
+    if (/^\d+$/.test(normalized)) {
+        return `t_${normalized}`;
+    }
+
+    return normalized;
 }
