@@ -62,8 +62,9 @@ class ImageMetadataNoteGeneratorView extends ItemView {
     private inputFolderText: TextComponent | null = null;
     private outputFolderText: TextComponent | null = null;
     private tagsFolderText: TextComponent | null = null;
-    private overwriteToggle: ToggleComponent | null = null;
-    private deleteExtraToggle: ToggleComponent | null = null;
+    private templateNoteText: TextComponent | null = null;
+    private skipOverwriteToggle: ToggleComponent | null = null;
+    private skipDeleteExtraToggle: ToggleComponent | null = null;
     private dryRunToggle: ToggleComponent | null = null;
     private isBusy = false;
     private linkedNote: TFile | null = null;
@@ -202,24 +203,37 @@ class ImageMetadataNoteGeneratorView extends ItemView {
             });
 
         new Setting(this.inspectorBodyEl)
-            .setName("Overwrite existing")
-            .addToggle((toggle) => {
-                this.overwriteToggle = toggle;
-                toggle.setValue(this.state.overwriteExisting);
-                toggle.onChange((value) => {
-                    this.state.overwriteExisting = value;
+            .setName("Template note")
+            .setDesc("Optional Markdown note whose body is rendered with Handlebars. Leave empty to use the built-in default template.")
+            .addText((text) => {
+                this.templateNoteText = text;
+                text.setPlaceholder("Templates/Image Metadata Default.md");
+                text.setValue(this.state.templateNote);
+                text.onChange((value) => {
+                    this.state.templateNote = normalizeFolderInput(value);
                     this.scheduleAutoSave();
                 });
             });
 
         new Setting(this.inspectorBodyEl)
-            .setName("Delete extra notes")
-            .setDesc("Delete Markdown files under the output folder that are not produced by the current run.")
+            .setName("Do not overwrite existing")
             .addToggle((toggle) => {
-                this.deleteExtraToggle = toggle;
-                toggle.setValue(this.state.deleteExtraNotes);
+                this.skipOverwriteToggle = toggle;
+                toggle.setValue(this.state.skipOverwriteExisting);
                 toggle.onChange((value) => {
-                    this.state.deleteExtraNotes = value;
+                    this.state.skipOverwriteExisting = value;
+                    this.scheduleAutoSave();
+                });
+            });
+
+        new Setting(this.inspectorBodyEl)
+            .setName("Do not delete extra notes")
+            .setDesc("By default, Markdown files under the output folder that are not produced by the current run are deleted.")
+            .addToggle((toggle) => {
+                this.skipDeleteExtraToggle = toggle;
+                toggle.setValue(this.state.skipDeleteExtraNotes);
+                toggle.onChange((value) => {
+                    this.state.skipDeleteExtraNotes = value;
                     this.scheduleAutoSave();
                 });
             });
@@ -298,8 +312,9 @@ class ImageMetadataNoteGeneratorView extends ItemView {
         this.inputFolderText?.setValue(this.state.inputFolder);
         this.outputFolderText?.setValue(this.state.outputFolder);
         this.tagsFolderText?.setValue(this.state.tagsFolder);
-        this.overwriteToggle?.setValue(this.state.overwriteExisting);
-        this.deleteExtraToggle?.setValue(this.state.deleteExtraNotes);
+        this.templateNoteText?.setValue(this.state.templateNote);
+        this.skipOverwriteToggle?.setValue(this.state.skipOverwriteExisting);
+        this.skipDeleteExtraToggle?.setValue(this.state.skipDeleteExtraNotes);
         this.dryRunToggle?.setValue(this.state.dryRun);
         this.suppressAutoSave = false;
         this.updateRunHint();
@@ -309,8 +324,9 @@ class ImageMetadataNoteGeneratorView extends ItemView {
         this.inputFolderText?.setDisabled(disabled);
         this.outputFolderText?.setDisabled(disabled);
         this.tagsFolderText?.setDisabled(disabled);
-        this.overwriteToggle?.setDisabled(disabled);
-        this.deleteExtraToggle?.setDisabled(disabled);
+        this.templateNoteText?.setDisabled(disabled);
+        this.skipOverwriteToggle?.setDisabled(disabled);
+        this.skipDeleteExtraToggle?.setDisabled(disabled);
         this.dryRunToggle?.setDisabled(disabled);
         this.inspectorBodyEl?.toggleClass("image-metadata-note-generator-is-readonly", disabled);
         this.inspectorBodyEl?.toggleClass("image-metadata-note-generator-is-hidden", disabled);
@@ -441,8 +457,9 @@ class ImageMetadataNoteGeneratorView extends ItemView {
         return left.inputFolder === right.inputFolder
             && left.outputFolder === right.outputFolder
             && left.tagsFolder === right.tagsFolder
-            && left.overwriteExisting === right.overwriteExisting
-            && left.deleteExtraNotes === right.deleteExtraNotes
+            && left.templateNote === right.templateNote
+            && left.skipOverwriteExisting === right.skipOverwriteExisting
+            && left.skipDeleteExtraNotes === right.skipDeleteExtraNotes
             && left.dryRun === right.dryRun;
     }
 
@@ -609,6 +626,38 @@ export default class ImageBatchNoteGeneratorPlugin extends Plugin {
 
         this.addSettingTab(new ImageBatchNoteGeneratorSettingTab(this.app, this));
 
+        this.registerMarkdownPostProcessor((el, context) => {
+            const section = context.getSectionInfo(el);
+            if (section && section.lineStart > 0) {
+                return;
+            }
+
+            const file = this.app.vault.getAbstractFileByPath(context.sourcePath);
+            if (!(file instanceof TFile) || !this.isJobNote(file)) {
+                return;
+            }
+
+            if (el.querySelector(".image-metadata-note-generator-inline-cta")) {
+                return;
+            }
+
+            const wrapper = createDiv({ cls: "image-metadata-note-generator-inline-cta" });
+            wrapper.createDiv({
+                cls: "image-metadata-note-generator-inline-cta-text",
+                text: "This note is an image metadata job."
+            });
+
+            const button = wrapper.createEl("button", {
+                cls: "mod-cta",
+                text: "Open inspector"
+            });
+            button.addEventListener("click", () => {
+                void this.activateView();
+            });
+
+            el.prepend(wrapper);
+        });
+
         this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
             void this.maybeAutoOpenInspector();
         }));
@@ -640,12 +689,14 @@ export default class ImageBatchNoteGeneratorPlugin extends Plugin {
             : DEFAULT_SETTINGS.maxSuggestionCount;
     }
 
+    isJobNote(file: TFile): boolean {
+        return this.app.metadataCache.getFileCache(file)?.frontmatter?.type === JOB_NOTE_TYPE;
+    }
+
     private async maybeAutoOpenInspector() {
         if (!this.settings.autoOpenInspector) return;
         const file = this.app.workspace.getActiveFile();
-        if (!(file instanceof TFile) || file.extension !== "md") return;
-        const loaded = loadJobConfigFromNote(this.app, file);
-        if (!loaded) return;
+        if (!(file instanceof TFile) || file.extension !== "md" || !this.isJobNote(file)) return;
         await this.activateView();
     }
 

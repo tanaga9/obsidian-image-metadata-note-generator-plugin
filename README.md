@@ -5,10 +5,11 @@ An Obsidian plugin for batch-generating Markdown notes from image metadata.
 ## Features
 - Current-note inspector workflow for image metadata jobs
 - Vault-relative `input folder`, `output folder`, and `tags folder`
+- Optional separate `template note` rendered with Handlebars
 - Folder path suggestions in inspector fields
 - Stable Diffusion-style metadata extraction from `png`, `jpg`, `jpeg`, and `webp`
 - Job-note workflow using Markdown frontmatter in the current note
-- `Scan`, `Run`, `Dry run`, `Overwrite existing`, and `Delete extra notes`
+- `Scan`, `Run`, `Dry run`, `Do not overwrite existing`, and `Do not delete extra notes`
 
 ## Job Note Format
 Store batch settings in a Markdown note frontmatter:
@@ -18,15 +19,30 @@ Store batch settings in a Markdown note frontmatter:
 type: image-metadata-note-generator-job
 input_folder: Assets/Images
 output_folder: Notes/Image Metadata
-tags_folder: Tags
-overwrite_existing: true
-delete_extra_notes: false
-dry_run: false
 ---
 ```
 
 Open the job note and the inspector will bind to it automatically.
 If the current note is not a job note yet, use the inspector action to initialize it.
+
+Other fields are optional and fall back to defaults when omitted.
+The default behavior is to overwrite existing notes. Set `skip_overwrite_existing: true` only when you want to preserve existing files.
+The default behavior is also to delete extra output notes. Set `skip_delete_extra_notes: true` only when you want to keep unmatched files.
+
+## Template Notes
+Use a separate Markdown note as the output template by setting `template_note` to its vault path.
+The template body is rendered with Handlebars. If `template_note` is empty, the plugin uses the built-in template that matches the current output format.
+
+Available fields in the template include:
+- `{{image.path}}`
+- `{{image.name}}`
+- `{{image.embed}}`
+- `{{prompt}}`
+- `{{yamlIndentedPrompt}}`
+- `{{parameters}}`
+- `{{tagsInline}}`
+- `{{#each tags}}...{{/each}}`
+- `{{#each models}}...{{/each}}`
 
 ## Install (from source)
 1. Install dependencies

@@ -1,4 +1,5 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
+import { DEFAULT_NOTE_TEMPLATE } from "./generator";
 import type ImageBatchNoteGeneratorPlugin from "./main";
 import { DEFAULT_SETTINGS } from "./types";
 
@@ -15,7 +16,7 @@ export class ImageBatchNoteGeneratorSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName("Auto-open inspector")
-            .setDesc("Open the right-side inspector automatically when you switch to a job note.")
+            .setDesc("Open the right-side inspector automatically when you switch to a job note. Disabled by default.")
             .addToggle((toggle) => toggle
                 .setValue(this.plugin.settings.autoOpenInspector)
                 .onChange(async (value) => {
@@ -47,5 +48,16 @@ export class ImageBatchNoteGeneratorSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                     this.display();
                 }));
+
+        containerEl.createEl("h3", { text: "Built-in Default Template" });
+        containerEl.createEl("p", {
+            text: "Used when a job note leaves template_note empty. This preview is read-only."
+        });
+
+        const templatePreview = containerEl.createEl("textarea", {
+            cls: "image-metadata-note-generator-template-preview"
+        });
+        templatePreview.readOnly = true;
+        templatePreview.value = DEFAULT_NOTE_TEMPLATE;
     }
 }
