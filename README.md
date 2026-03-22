@@ -38,6 +38,36 @@ Other fields are optional and fall back to defaults when omitted.
 The default behavior is to overwrite existing notes. Set `skip_overwrite_existing: true` only when you want to preserve existing files.
 The default behavior is also to delete extra output notes. Set `skip_delete_extra_notes: true` only when you want to keep unmatched files.
 
+## Optional Integration: base-live-filter
+If you also use [obsidian-base-live-filter-plugin](https://github.com/tanaga9/obsidian-base-live-filter-plugin), the job note can also work as a simple dashboard for generated notes.
+
+````yaml
+---
+type: image-metadata-note-generator-job
+input_folder: Assets/Images
+output_folder: Notes/Image Metadata
+---
+```base
+# BEGIN FILTERS (managed by obsidian-base-live-filter-plugin)
+filters:
+# INPUT: 
+# CARET: 0
+# END FILTERS
+# ---- Manual edits below are OK (column definitions, view settings, etc.) ----
+formulas:
+  image: if(["png", "jpg", "jpeg", "webp"].contains(file.embeds[0].asFile().ext), file.embeds[0])
+views:
+  - type: cards
+    name: Notes
+    image: formula.image
+    filters:
+      and:
+        - file.ext.contains("md")
+        - file.folder.containsAny("Notes/Image Metadata")
+
+```
+````
+
 ## Template Notes
 Use a separate Markdown note as the output template by setting `template_note` to its vault path.
 The template body is rendered with Handlebars. If `template_note` is empty, the plugin uses the built-in template that matches the current output format.
